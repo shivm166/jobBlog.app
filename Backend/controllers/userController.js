@@ -2,65 +2,98 @@ import User from "../models/userModel.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 
-export const signup = async (req, res, next) => {
+// ==================== SIGNUP ====================
+export const signup = async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { username, email, password } = req.body;
 
-    if (!name || !email || !password) {
-      throw new Error("All fields are required!");
+    // 1. Validate input
+    if (!username || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: "All fields (username, email, password) are required",
+      });
     }
 
-    const userExist = await User.findOne({ email });
-
-    if (userExist) {
-      const error = new Error("User already exists! Try again.");
-      error.statusCode = 409;
-      throw error;
-    }
-
-    const hashPassword = await bcrypt.hash(password, 10);
-
-    const regUser = await User.create({
-      name,
-      email,
-      password: hashPassword,
+    // 2. Check if username or email already exists
+    const existingUser = await User.findOne({
+      $or: [{ username }, { email }],
     });
 
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        message:
+          existingUser.username === username
+            ? "Username already taken"
+            : "Email already registered",
+      });
+    }
+
+    // 3. Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // 4. Create user
+    const newUser = await User.create({
+      username,
+      email,
+      password: hashedPassword,
+    });
+
+    // 5. Return success
     res.status(201).json({
       success: true,
-      message: "User registered successfully!",
-      regUser,
+      message: "User registered successfully",
+      user: {
+        id: newUser._id,
+        username: newUser.username,
+        email: newUser.email,
+      },
     });
   } catch (err) {
-    next(err);
+    // Handle duplicate key error (MongoDB)
+    if (err.code === 11000) {
+      const field = Object.keys(err.keyPattern)[0];
+      return res.status(409).json({
+        success: false,
+        message: `${field} already exists`,
+      });
+    }
+
+    console.error(err);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
-export const login = async (req, res, next) => {
+// ==================== LOGIN ====================
+export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
     // 1. Validate input
     if (!email || !password) {
-      const error = new Error("All fields are required!");
-      error.statusCode = 400;
-      throw error;
+      return res.status(400).json({
+        success: false,
+        message: "Email and password are required",
+      });
     }
 
-    // 2. Check if user exists
+    // 2. Find user
     const user = await User.findOne({ email });
     if (!user) {
-      const error = new Error("User email does not exist! Try again.");
-      error.statusCode = 404;
-      throw error;
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
     // 3. Compare password
-    const isPasswordMatch = await bcrypt.compare(password, user.password);
-    if (!isPasswordMatch) {
-      const error = new Error("Incorrect password! Try again.");
-      error.statusCode = 401;
-      throw error;
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        message: "Incorrect password",
+      });
     }
 
     // 4. Generate JWT token
@@ -68,44 +101,71 @@ export const login = async (req, res, next) => {
       expiresIn: "1h",
     });
 
-    // 5. Set cookie
+    // 5. Send response
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // true in production (HTTPS)
       sameSite: "strict",
-      maxAge: 60 * 60 * 1000, // 1 hour
+      maxAge: 60 * 60 * 1000,
+      secure: process.env.NODE_ENV === "production",
     });
 
-    // 6. Send response
     res.status(200).json({
       success: true,
-      message: "Login successful!",
+      message: "Login successful",
       user: {
         id: user._id,
-        name: user.name,
+        username: user.username,
         email: user.email,
-        role: user.role,
       },
-      token, // optional if you already use cookies
+      token,
     });
   } catch (err) {
-    next(err); // Pass error to global error middleware
+    console.error(err);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };
 
-export const profile = async (req, res, next) => {
+// ==================== PROFILE ====================
+export const profile = async (req, res) => {
   try {
     const { id } = req.params;
-    const user = await User.findById(id);
 
+    const user = await User.findById(id);
     if (!user) {
-      const error = new Error("User not found. Please login again.");
-      error.statusCode = 401;
-      throw error;
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
     }
 
-    res.status(200).json({ message: "User profile fetched", user });
+    res.status(200).json({
+      success: true,
+      message: "User profile fetched",
+      user: {
+        id: user._id,
+        username: user.username,
+        email: user.email,
+      },
+    });
   } catch (err) {
-    next(err);
+    console.error(err);
+    res.status(500).json({ success: false, message: "Internal server error" });
+  }
+};
+
+// ==================== GET ALL USERS ====================
+export const getAllUser = async (req, res) => {
+  try {
+    const users = await User.find();
+    if (!users || users.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No users found",
+      });
+    }
+    res.status(200).json({ users });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: "Internal server error" });
   }
 };

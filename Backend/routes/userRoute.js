@@ -1,6 +1,7 @@
 import express from "express";
-import { login, signup } from "../controllers/userController.js";
+import { login, profile, signup } from "../controllers/userController.js";
 import { loginSchema, signupSchema } from "../middelware/userValidation.js";
+import { protect } from "../middelware/protect.js";
 
 const route = express.Router();
 
@@ -12,4 +13,5 @@ const validate = (schema) => (req, res, next) => {
 
 route.post("/signup", validate(signupSchema), signup);
 route.post("/login", validate(loginSchema), login);
+route.get("/profile/:id", protect, profile);
 export default route;

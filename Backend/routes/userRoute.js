@@ -11,6 +11,5 @@ const validate = (schema) => (req, res, next) => {
 };
 
 route.post("/signup", validate(signupSchema), signup);
-route.post("/login", validate(loginSchema), login); // It's better to validate login too
-
+route.post("/login", validate(loginSchema), login);
 export default route;
